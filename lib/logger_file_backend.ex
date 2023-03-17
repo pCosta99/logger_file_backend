@@ -66,9 +66,15 @@ defmodule LoggerFileBackend do
     {:ok, state}
   end
 
-  defp log_event(level, msg, ts, md, %{path: path, io_device: nil} = state)
+  defp log_event(
+         level,
+         msg,
+         ts,
+         md,
+         %{path: path, io_device: nil, file_open_options: file_open_options} = state
+       )
        when is_binary(path) do
-    case open_log(path) do
+    case open_log(path, file_open_options) do
       {:ok, io_device, inode} ->
         log_event(level, msg, ts, md, %{state | io_device: io_device, inode: inode})
 
@@ -82,7 +88,13 @@ defmodule LoggerFileBackend do
          msg,
          ts,
          md,
-         %{path: path, io_device: io_device, inode: inode, rotate: rotate} = state
+         %{
+           path: path,
+           io_device: io_device,
+           inode: inode,
+           rotate: rotate,
+           file_open_options: file_open_options
+         } = state
        )
        when is_binary(path) do
     if !is_nil(inode) and inode == get_inode(path) and rotate(path, rotate) do
@@ -93,7 +105,7 @@ defmodule LoggerFileBackend do
         {:ok, state}
       rescue
         ErlangError ->
-          case open_log(path) do
+          case open_log(path, file_open_options) do
             {:ok, io_device, inode} ->
               IO.write(io_device, prune(output))
               {:ok, %{state | io_device: io_device, inode: inode}}
@@ -132,10 +144,10 @@ defmodule LoggerFileBackend do
 
   defp rotate(_path, nil), do: true
 
-  defp open_log(path) do
+  defp open_log(path, file_open_options) do
     case path |> Path.dirname() |> File.mkdir_p() do
       :ok ->
-        case File.open(path, [:append, :utf8]) do
+        case File.open(path, file_open_options) do
           {:ok, io_device} -> {:ok, io_device, get_inode(path)}
           other -> other
         end
@@ -209,7 +221,8 @@ defmodule LoggerFileBackend do
       metadata: nil,
       metadata_filter: nil,
       metadata_reject: nil,
-      rotate: nil
+      rotate: nil,
+      file_open_options: nil
     }
 
     configure(name, opts, state)
@@ -228,6 +241,7 @@ defmodule LoggerFileBackend do
     metadata_filter = Keyword.get(opts, :metadata_filter)
     metadata_reject = Keyword.get(opts, :metadata_reject)
     rotate = Keyword.get(opts, :rotate)
+    file_open_options = Keyword.get(opts, :file_open_options, [:append, :utf8])
 
     %{
       state
@@ -238,7 +252,8 @@ defmodule LoggerFileBackend do
         metadata: metadata,
         metadata_filter: metadata_filter,
         metadata_reject: metadata_reject,
-        rotate: rotate
+        rotate: rotate,
+        file_open_options: file_open_options
     }
   end
 
